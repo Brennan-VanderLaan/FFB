@@ -1,0 +1,4 @@
+Part Number	Name
+REV-21-1843	3/8in hex to 1/2in hex (through bore encoder)
+REV-21-1844	5mm hex to 1/2in hex (through bore encoder)
+REV-21-1845	1/8in round to 1/2in hex (through bore encoder)
