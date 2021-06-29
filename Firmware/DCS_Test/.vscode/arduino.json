@@ -1,6 +1,0 @@
-{
-    "board": "arduino:avr:micro",
-    "sketch": "DCS_Test.ino",
-    "port": "COM15",
-    "programmer": "ArduinoISP"
-}
