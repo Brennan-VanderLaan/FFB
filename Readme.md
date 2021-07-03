@@ -16,3 +16,10 @@ Yes of course I want to make it safer, I am iterating on the design and working 
 
 # It will hurt the whole time you drive to the hospital
 I don't think it will kill you (it could if you really screwed up on the power supply / shorting something and causing a fire) but it hasn't passed **any** certifications, if you choose to use anything (designs, stls, motor sizing, etc) from this project you're doing it at your own risk. If you do build it, please be careful!
+
+
+---
+
+
+## This is the gallery on progress so far
+https://imgur.com/a/CQUiYn6
