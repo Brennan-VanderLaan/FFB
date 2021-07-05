@@ -109,21 +109,21 @@ void debug_print_eeprom() {
     set_default_eeprom();
   }
   
-  Serial.print("X_AXIS_PWM_TARGET ");
+  Serial.print("X_AX_PWM_TGT ");
   Serial.print(x_axis_pwm_target);
-  Serial.print(" X_AXIS_CAL_MAX ");
+  Serial.print(" X_AX_CAL_MAX ");
   Serial.print(x_axis_cal_max);
-  Serial.print(" X_AXIS_CAL_MIN ");
+  Serial.print(" X_AX_CAL_MIN ");
   Serial.print(x_axis_cal_min);
-  Serial.print(" X_AXIS_CURRENT ");
+  Serial.print(" X_AX_I ");
   Serial.print(x_axis_current);
-  Serial.print(" Y_AXIS_PWM_TARGET ");
+  Serial.print(" Y_AX_PWM_TGT ");
   Serial.print(y_axis_pwm_target);
-  Serial.print(" Y_AXIS_CAL_MAX ");
+  Serial.print(" Y_AX_CAL_MAX ");
   Serial.print(y_axis_cal_max);
-  Serial.print(" Y_AXIS_CAL_MIN ");
+  Serial.print(" Y_AX_CAL_MIN ");
   Serial.print(y_axis_cal_min);
-  Serial.print(" Y_AXIS_CURRENT ");
+  Serial.print(" Y_AX_I ");
   Serial.println(y_axis_current);
 }
 
@@ -199,7 +199,7 @@ void boot_initialize_pins() {
 }
 
 void boot_initialize_calibration() {
-  Serial.println("BOOT: Init calibration...");
+  Serial.println("BOOT: Init cal...");
   debug_print_eeprom();
 }
 
@@ -227,13 +227,13 @@ void boot_connect_odrive() {
 }
 
 void check_for_calibration_call() {
-  Serial.println("Giving time for calibration call...");
+  Serial.println("cal call...");
   delay(3000);
   while(Serial.available() > 0 ){
     String str = Serial.readString();
     Serial.println(str);
     if(str.substring(0) == "cal\n"){
-      Serial.println("identified");
+      Serial.println("iden");
       JOYSTICK_CURRENT_STATE = STATE_CALIBRATE;
       return;
     } else {
@@ -241,7 +241,6 @@ void check_for_calibration_call() {
     }
   }
   JOYSTICK_CURRENT_STATE = STATE_ODRIVE_INIT;
-  Serial.println("Dumping out of calibration check...");
 }
 
 void setup(){
@@ -279,7 +278,30 @@ float filterPosition(int motor_number) {
 }
   
 void generic_loop() {
-    
+
+  //set X Axis Spring Effect Param
+  myeffectparams[0].springMaxPosition = 1023;
+  myeffectparams[0].springPosition = pwm_x_value;
+  
+  //set Y Axis Spring Effect Param
+  myeffectparams[1].springMaxPosition = 1023;
+  myeffectparams[1].springPosition = pwm_y_value;
+  
+  Joystick.setEffectParams(myeffectparams);
+  Joystick.getForce(forces);
+
+
+  float xForce = ((map(forces[0], -255, 255, 0, 1000) * .001f) * .3f) -.15f;
+  float yForce = ((map(forces[1], -255, 255, 0, 1000) * .001f) * .3f) -.15f;
+
+  Serial << "forces: " << forces[0] << ", " << forces[1] << " -> " << xForce << ", " << yForce << "\n";
+
+  
+  odrive_serial << "w axis" << 0 << ".controller.input_torque " << xForce << "\n";
+  odrive_serial << "w axis" << 1 << ".controller.input_torque " << yForce << "\n";
+  
+  delay(1);
+
 }
 
 void calibrate_loop() {
@@ -295,7 +317,7 @@ void calibrate_loop() {
 
   bool print_update = false;
 
-  Serial.println("Starting calibration loop...");
+  Serial.println("cal loop...");
   odrive.run_state(0, ODriveArduino::AXIS_STATE_IDLE, true);
   odrive.run_state(1, ODriveArduino::AXIS_STATE_IDLE, true);
   while (millis() < (start + 25000)) {
@@ -344,7 +366,6 @@ void calibrate_loop() {
 
   }
 
-  Serial.println("Done calibrating");
 
   writeInt(ADDR_X_AXIS_PWM_TARGET, ((x_max - x_min) / 2) + x_min);
   writeInt(ADDR_X_AXIS_CAL_MAX, x_max);
@@ -354,7 +375,6 @@ void calibrate_loop() {
   writeInt(ADDR_Y_AXIS_CAL_MAX, y_max);
   writeInt(ADDR_Y_AXIS_CAL_MIN, y_min);
   writeInt(ADDR_Y_AXIS_CURRENT, 5);
-
 
   x_axis_pwm_target = readInt(ADDR_X_AXIS_PWM_TARGET);
   x_axis_cal_max = readInt(ADDR_X_AXIS_CAL_MAX);
@@ -370,21 +390,21 @@ void calibrate_loop() {
 
 void set_calibration_direction() {
 
-  Serial << "Resetting Axis0 & Axis1\n";
+  Serial << "Resetting Axis0&1\n";
   odrive.run_state(0, ODriveArduino::AXIS_STATE_IDLE, true);
   odrive.run_state(1, ODriveArduino::AXIS_STATE_IDLE, true);
   
   Serial.println("Setting X EncDir");
 
   while (x_axis_cal_min > pwm_x_value > 0 || 1024 > pwm_x_value > 990) {
-    Serial << "waiting on x move\n";
+    Serial << "waiting on x\n";
     delay(100);
   }
   odrive.run_state(1, ODriveArduino::AXIS_STATE_ENCODER_INDEX_SEARCH, true);
-  Serial << "Done..\nSetting odrive Y Encoder dir";
+  Serial << "Done..\nSetting Y Enc dir";
 
   while (y_axis_cal_min > pwm_y_value > 0 || 1024 > pwm_y_value > 990) {
-    Serial << "Waiting on y move\n";
+    Serial << "Waiting on y\n";
     delay(100);
   }
   Serial << "Done\n";
@@ -414,7 +434,6 @@ void loop(){
     case STATE_ODRIVE_INIT:
       set_calibration_direction();
       start_odrive();
-      Serial.println("Starting Generic FFB control loop");
       JOYSTICK_CURRENT_STATE = STATE_GENERIC;
       break;
     
