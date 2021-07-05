@@ -320,7 +320,7 @@ void calibrate_loop() {
   Serial.println("cal loop...");
   odrive.run_state(0, ODriveArduino::AXIS_STATE_IDLE, true);
   odrive.run_state(1, ODriveArduino::AXIS_STATE_IDLE, true);
-  while (millis() < (start + 25000)) {
+  while (millis() < (start + 65000)) {
 
     print_update = false;
 
