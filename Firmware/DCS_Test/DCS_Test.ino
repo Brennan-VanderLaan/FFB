@@ -314,27 +314,34 @@ void generic_loop() {
   int val;
   int x;
 
-  if(x_axis_cal_max < x_axis_cal_min) //if calibration range crosses 0
+  Serial << "x,y: ";
+//X_PWM_TGT 939 X_C_MAX 612 X_C_MIN 244 X_CUR 5 Y_PWM_TGT 859 Y_C_MAX 412 Y_C_MIN 540 Y_CUR 5
+//xVals: 612, 248 yVals: 428, 548
+  if(x_axis_cal_max > x_axis_cal_min) //if calibration range crosses 0
   {
     offset = X_AXIS_VAL_MAX - x_axis_cal_min;
     local_max = x_axis_cal_max + offset;
-    val = (pwm_x_value + offset) % X_AXIS_VAL_MAX;
+    val = (pwm_x_value + offset) % (X_AXIS_VAL_MAX + 1);
   }
   else  //does not cross 0
   {
     local_max = x_axis_cal_max-x_axis_cal_min;
     val = pwm_x_value - x_axis_cal_min;
   }
+
+  Serial << val;
   
   //set X Axis Spring Effect Param
   myeffectparams[0].springMaxPosition = 1023;
-  myeffectparams[0].springPosition = map(val, 0, local_max, 0, 1023);
+  myeffectparams[0].springPosition = map(val, local_max, 0, 0, 1023);
+
+  Joystick.setXAxis(map(val, local_max, 0, 0, 1023));
   
-  if(y_axis_cal_min < y_axis_cal_max) //if calibration range crosses 0
+  if(y_axis_cal_min > y_axis_cal_max) //if calibration range crosses 0
   {
     offset = Y_AXIS_VAL_MAX - y_axis_cal_max;
     local_max = y_axis_cal_min + offset;
-    val = (pwm_y_value + offset) % Y_AXIS_VAL_MAX;
+    val = (pwm_y_value + offset) % (Y_AXIS_VAL_MAX + 1);
   }
   else  //does not cross 0
   {
@@ -342,19 +349,21 @@ void generic_loop() {
     val = pwm_y_value - y_axis_cal_max;
   }
 
+  Serial << ", " << val;
+
   //set Y Axis Spring Effect Param
   myeffectparams[1].springMaxPosition = 1023;
-  myeffectparams[0].springPosition = map(val, 0, local_max, 0, 1023);
-  
+  myeffectparams[1].springPosition = map(val, local_max, 0, 0, 1023);
 
+  Joystick.setYAxis(map(val, local_max, 0, 0, 1023));
 
   Joystick.setEffectParams(myeffectparams);
   Joystick.getForce(forces);
 
-  float xForce = ((map(forces[0], -255, 255, 0, 1000) * .001f) * .3f) -.15f;
-  float yForce = ((map(forces[1], -255, 255, 0, 1000) * .001f) * .3f) -.15f;
+  float xForce = ((map(forces[0], 255, -255, 0, 1000) * .001f) * .6f) -.3f;
+  float yForce = ((map(forces[1], 255, -255, 0, 1000) * .001f) * .6f) -.3f;
 
-  Serial << "x,y: " << x << ", " << x << " forces: " << forces[0] << ", " << forces[1] << " -> " << xForce << ", " << yForce << "\n";
+  Serial << "spring: " << myeffectparams[0].springPosition << ", " << myeffectparams[1].springPosition << " forces: " << forces[0] << ", " << forces[1] << " -> " << xForce << ", " << yForce << "\n";
 
   
   odrive_serial << "w axis" << 0 << ".controller.input_torque " << xForce << "\n";
