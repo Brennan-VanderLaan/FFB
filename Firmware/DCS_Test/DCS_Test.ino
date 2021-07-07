@@ -56,8 +56,9 @@ enum CAL_STATE {
 
 int JOYSTICK_CURRENT_STATE = STATE_BOOT;
 
-#define X_AXIS_VAL_MAX = 1023; 
-#define Y_AXIS_VAL_MAX = 1023;
+// Max value for x 
+#define X_AXIS_VAL_MAX 1023
+#define Y_AXIS_VAL_MAX 1023
 
 // Calibration EEPROM addresses
 #define ADDR_X_AXIS_PWM_TARGET 1
@@ -297,7 +298,7 @@ void generic_loop() {
   //int x_axis_cal_max = readInt(ADDR_X_AXIS_CAL_MAX);
   //int x_axis_cal_min = readInt(ADDR_X_AXIS_CAL_MIN);
   //int x_axis_current = readInt(ADDR_X_AXIS_CURRENT);
-
+/*
   int x = 0;
   if (pwm_x_value > x_axis_cal_max) {
     x = ADDR_X_AXIS_CAL_MIN + (1023 - pwm_x_value);
@@ -306,19 +307,49 @@ void generic_loop() {
   }
 
   int range = ((1023 - x_axis_cal_max) + x_axis_cal_min);
-  
+*/ 
+
+  int offset;
+  int local_max;
+  int val;
+  int x;
+
+  if(x_axis_cal_max < x_axis_cal_min) //if calibration range crosses 0
+  {
+    offset = X_AXIS_VAL_MAX - x_axis_cal_min;
+    local_max = x_axis_cal_max + offset;
+    val = (pwm_x_value + offset) % X_AXIS_VAL_MAX;
+  }
+  else  //does not cross 0
+  {
+    local_max = x_axis_cal_max-x_axis_cal_min;
+    val = pwm_x_value - x_axis_cal_min;
+  }
   
   //set X Axis Spring Effect Param
   myeffectparams[0].springMaxPosition = 1023;
-  myeffectparams[0].springPosition = map(x, 0, range, 0, 1023);
+  myeffectparams[0].springPosition = map(val, 0, local_max, 0, 1023);
   
+  if(y_axis_cal_min < y_axis_cal_max) //if calibration range crosses 0
+  {
+    offset = Y_AXIS_VAL_MAX - y_axis_cal_max;
+    local_max = y_axis_cal_min + offset;
+    val = (pwm_y_value + offset) % Y_AXIS_VAL_MAX;
+  }
+  else  //does not cross 0
+  {
+    local_max = y_axis_cal_min-y_axis_cal_max;
+    val = pwm_y_value - y_axis_cal_max;
+  }
+
   //set Y Axis Spring Effect Param
   myeffectparams[1].springMaxPosition = 1023;
-  myeffectparams[1].springPosition = pwm_y_value; //wrong
+  myeffectparams[0].springPosition = map(val, 0, local_max, 0, 1023);
   
+
+
   Joystick.setEffectParams(myeffectparams);
   Joystick.getForce(forces);
-
 
   float xForce = ((map(forces[0], -255, 255, 0, 1000) * .001f) * .3f) -.15f;
   float yForce = ((map(forces[1], -255, 255, 0, 1000) * .001f) * .3f) -.15f;
