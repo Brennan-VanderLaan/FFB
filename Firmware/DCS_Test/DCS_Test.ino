@@ -47,6 +47,13 @@ enum JOYSTICK_STATE {
   STATE_GENERIC  
 };
 
+enum CAL_STATE {
+  CAL_X_MIN,
+  CAL_X_MAX,
+  CAL_Y_MIN,
+  CAL_Y_MAX
+};
+
 int JOYSTICK_CURRENT_STATE = STATE_BOOT;
 
 // Calibration EEPROM addresses
@@ -109,21 +116,21 @@ void debug_print_eeprom() {
     set_default_eeprom();
   }
   
-  Serial.print("X_AX_PWM_TGT ");
+  Serial.print("X_PWM_TGT ");
   Serial.print(x_axis_pwm_target);
-  Serial.print(" X_AX_CAL_MAX ");
+  Serial.print(" X_C_MAX ");
   Serial.print(x_axis_cal_max);
-  Serial.print(" X_AX_CAL_MIN ");
+  Serial.print(" X_C_MIN ");
   Serial.print(x_axis_cal_min);
-  Serial.print(" X_AX_I ");
+  Serial.print(" X_CUR ");
   Serial.print(x_axis_current);
-  Serial.print(" Y_AX_PWM_TGT ");
+  Serial.print(" Y_PWM_TGT ");
   Serial.print(y_axis_pwm_target);
-  Serial.print(" Y_AX_CAL_MAX ");
+  Serial.print(" Y_C_MAX ");
   Serial.print(y_axis_cal_max);
-  Serial.print(" Y_AX_CAL_MIN ");
+  Serial.print(" Y_C_MIN ");
   Serial.print(y_axis_cal_min);
-  Serial.print(" Y_AX_I ");
+  Serial.print(" Y_CUR ");
   Serial.println(y_axis_current);
 }
 
@@ -193,7 +200,6 @@ void y_falling() {
 }
 
 void boot_initialize_pins() {
-  Serial.println("BOOT: Init pins...");
   pinMode(6,OUTPUT);
   pinMode(10,OUTPUT);
 }
@@ -227,17 +233,22 @@ void boot_connect_odrive() {
 }
 
 void check_for_calibration_call() {
-  Serial.println("cal call...");
-  delay(3000);
+  
   while(Serial.available() > 0 ){
+    Serial.read();
+  }
+  Serial.println("cal call...");
+  delay(5000);
+  while(Serial.available() > 0 ){
+    Serial << "Check\n";
     String str = Serial.readString();
-    Serial.println(str);
+    Serial << "'" << str << "'\n";
     if(str.substring(0) == "cal\n"){
       Serial.println("iden");
       JOYSTICK_CURRENT_STATE = STATE_CALIBRATE;
       return;
     } else {
-      Serial.println("nope");
+      Serial << "Err: '" << str << "'\n";
     }
   }
   JOYSTICK_CURRENT_STATE = STATE_ODRIVE_INIT;
@@ -279,13 +290,29 @@ float filterPosition(int motor_number) {
   
 void generic_loop() {
 
+  //Calibration values
+  //int x_axis_pwm_target = readInt(ADDR_X_AXIS_PWM_TARGET);
+  //int x_axis_cal_max = readInt(ADDR_X_AXIS_CAL_MAX);
+  //int x_axis_cal_min = readInt(ADDR_X_AXIS_CAL_MIN);
+  //int x_axis_current = readInt(ADDR_X_AXIS_CURRENT);
+
+  int x = 0;
+  if (pwm_x_value > x_axis_cal_max) {
+    x = ADDR_X_AXIS_CAL_MIN + (1023 - pwm_x_value);
+  } else {
+    x = ADDR_X_AXIS_CAL_MIN - pwm_x_value;
+  }
+
+  int range = ((1023 - x_axis_cal_max) + x_axis_cal_min);
+  
+  
   //set X Axis Spring Effect Param
   myeffectparams[0].springMaxPosition = 1023;
-  myeffectparams[0].springPosition = pwm_x_value;
+  myeffectparams[0].springPosition = map(x, 0, range, 0, 1023);
   
   //set Y Axis Spring Effect Param
   myeffectparams[1].springMaxPosition = 1023;
-  myeffectparams[1].springPosition = pwm_y_value;
+  myeffectparams[1].springPosition = pwm_y_value; //wrong
   
   Joystick.setEffectParams(myeffectparams);
   Joystick.getForce(forces);
@@ -294,33 +321,42 @@ void generic_loop() {
   float xForce = ((map(forces[0], -255, 255, 0, 1000) * .001f) * .3f) -.15f;
   float yForce = ((map(forces[1], -255, 255, 0, 1000) * .001f) * .3f) -.15f;
 
-  Serial << "forces: " << forces[0] << ", " << forces[1] << " -> " << xForce << ", " << yForce << "\n";
+  Serial << "x,y: " << x << ", " << x << " forces: " << forces[0] << ", " << forces[1] << " -> " << xForce << ", " << yForce << "\n";
 
   
   odrive_serial << "w axis" << 0 << ".controller.input_torque " << xForce << "\n";
   odrive_serial << "w axis" << 1 << ".controller.input_torque " << yForce << "\n";
   
   delay(1);
-
 }
 
 void calibrate_loop() {
   unsigned long start = millis();
 
-  int x_max = 1025;
-  int x_min = -1;
-  int y_max = 1025;
+  int x_min = 0; 
+  int x_max = -1;
+
   int y_min = -1;
+  int y_max = -1;
 
   //360, 768
   //576, 700
 
   bool print_update = false;
+  bool done = false;
 
   Serial.println("cal loop...");
   odrive.run_state(0, ODriveArduino::AXIS_STATE_IDLE, true);
   odrive.run_state(1, ODriveArduino::AXIS_STATE_IDLE, true);
-  while (millis() < (start + 65000)) {
+
+  //  CAL_X_MIN,
+  //  CAL_X_MAX,
+  //  CAL_Y_MIN,
+  //  CAL_Y_MAX
+  int calibration_state = CAL_X_MIN;
+  Serial << "X->Min\n";
+  
+  while (!done) {
 
     print_update = false;
 
@@ -328,50 +364,85 @@ void calibrate_loop() {
       print_update = true;
     }
 
-    if ((int)millis() % 100 == 0) {
-      if (pwm_x_value < 550) {
-        if (x_min < pwm_x_value) {
-          x_min = pwm_x_value;
-          print_update = true;
-        }
-      }
-
-      if (pwm_x_value > 550) {
-        if (x_max > pwm_x_value) {
-          x_max = pwm_x_value;
-          print_update = true;
-        }
-      }
-
-      if (pwm_y_value < 635) {
-        if (y_min < pwm_y_value) {
-          y_min = pwm_y_value;
-          print_update = true;
-        }
-      }
-
-      if (pwm_y_value > 635) {
-        if (y_max > pwm_y_value) {
-          y_max = pwm_y_value;
-          print_update = true;
-        }
-      }
+    bool advance = false;
+    if(Serial.available())
+    {
+      //Flush the buffer for the next loop
+      while (Serial.available()) Serial.read();
+      advance = true;
     }
-
+    
+    switch(calibration_state)
+    {
+      case CAL_X_MIN:
+        x_min = pwm_x_value;
+        print_update = true;
+        if (advance) {
+          calibration_state = CAL_X_MAX;
+          Serial << "X->Max\n";
+        }
+        break;
+      case CAL_X_MAX:
+        x_max = pwm_x_value;
+        print_update = true;
+        if (advance) {
+          calibration_state = CAL_Y_MIN;
+          Serial << "Y->Min\n";
+        }        
+        break;
+      case CAL_Y_MIN:
+        y_min = pwm_y_value;
+        print_update = true;
+        if (advance) {
+          calibration_state = CAL_Y_MAX;
+          Serial << "Y->Max\n";
+        }        
+        break;
+      case CAL_Y_MAX:
+        y_max = pwm_y_value;
+        print_update = true;
+        if (advance) {
+          done = true;
+          Serial << "Done!\n";
+        }        
+        break;
+      default:
+          Serial << "Cal switch err\n";
+          done = true;
+        break;
+    }
+    
     if (print_update) {      
       Serial  << pwm_x_value << ", " << pwm_y_value << "-> " << "xVals: " << x_max << ", " << x_min << " yVals: " << y_max << ", " << y_min  << "\n";
     }
 
     delay(1);
-
   }
 
+  int diff = 0;
+  int mid = 0;
+  if (x_max > x_min) {
+      diff = (x_min + 1023) - x_max;
+  }
+  else {
+      diff = x_min - x_max;
+  }
+  mid = (x_max + (diff/2)) % 1023;
 
-  writeInt(ADDR_X_AXIS_PWM_TARGET, ((x_max - x_min) / 2) + x_min);
+  writeInt(ADDR_X_AXIS_PWM_TARGET, mid);
   writeInt(ADDR_X_AXIS_CAL_MAX, x_max);
   writeInt(ADDR_X_AXIS_CAL_MIN, x_min);
   writeInt(ADDR_X_AXIS_CURRENT, 5);
-  writeInt(ADDR_Y_AXIS_PWM_TARGET, ((y_max - y_min) / 2) + y_min);
+
+  if (y_min > y_max) {
+      diff = (y_max + 1023) - y_min;
+  }
+  else {
+      diff = y_max - y_min;
+  }
+  mid = (y_max + (diff/2)) % 1023;
+  
+  writeInt(ADDR_Y_AXIS_PWM_TARGET, mid);
   writeInt(ADDR_Y_AXIS_CAL_MAX, y_max);
   writeInt(ADDR_Y_AXIS_CAL_MIN, y_min);
   writeInt(ADDR_Y_AXIS_CURRENT, 5);
@@ -390,25 +461,25 @@ void calibrate_loop() {
 
 void set_calibration_direction() {
 
-  Serial << "Resetting Axis0&1\n";
+  Serial << "Res Ax0 & Ax1\n";
   odrive.run_state(0, ODriveArduino::AXIS_STATE_IDLE, true);
   odrive.run_state(1, ODriveArduino::AXIS_STATE_IDLE, true);
   
-  Serial.println("Setting X EncDir");
+  Serial.println("Set X EncDir");
 
   while (x_axis_cal_min > pwm_x_value > 0 || 1024 > pwm_x_value > 990) {
     Serial << "waiting on x\n";
     delay(100);
   }
-  odrive.run_state(1, ODriveArduino::AXIS_STATE_ENCODER_INDEX_SEARCH, true);
-  Serial << "Done..\nSetting Y Enc dir";
+  odrive.run_state(0, ODriveArduino::AXIS_STATE_ENCODER_INDEX_SEARCH, true);
+  Serial << "Done..\nSet Y Encoder dir";
 
   while (y_axis_cal_min > pwm_y_value > 0 || 1024 > pwm_y_value > 990) {
     Serial << "Waiting on y\n";
     delay(100);
   }
   Serial << "Done\n";
-  odrive.run_state(0, ODriveArduino::AXIS_STATE_ENCODER_INDEX_SEARCH, true);
+  odrive.run_state(1, ODriveArduino::AXIS_STATE_ENCODER_INDEX_SEARCH, true);
 }
 
 void start_odrive() {
